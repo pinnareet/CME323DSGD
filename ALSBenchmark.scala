@@ -44,3 +44,22 @@ for(rank <- ranks)
 }.mean()
 println("Mean Squared Error = " + MSE)
 }
+/**
+Elapsed time: 34.046480688s
+Mean Squared Error = 0.719300632674746
+
+Elapsed time: 38.907951336s
+Mean Squared Error = 0.6999753474768506
+
+Elapsed time: 40.57805099s
+Mean Squared Error = 0.7194129186771464
+
+Elapsed time: 113.310693934s
+Mean Squared Error = 0.7503646809863859
+
+Elapsed time: 131.648135351s
+Mean Squared Error = 0.8081119336189002
+
+Elapsed time: 367.787043885s
+Mean Squared Error = 0.9453637968975303
+**/
