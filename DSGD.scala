@@ -1,24 +1,27 @@
-import org.apache.spark._
+import org.apache.spark.rdd.RDD
 import org.apache.spark.mllib.linalg.Matrix
 import org.apache.spark.mllib.linalg.Matrices
+import org.apache.spark.mllib.linalg.distributed.MatrixEntry
+import org.apache.spark.mllib.linalg.distributed.CoordinateMatrix
 import scala.util.Random
 
-object DSGD {
 
-	def stratPerms (numBlocks:Int) : Iterator[List[Int]] = {
+	def stratPerms (numBlocks:Int) = {
 		val x = 0 to numBlocks - 1 toList
-		return x.permutations
+		val p = x.permutations.toList
+		p
 	}
 
 	// Assign each element of V to a block
-	def assignBlocks (row:Int, col:Int, numWorkers:Int) = {
-		return (row/numWorkers, col/numWorkers)
+	def assignBlocks (row:Int, col:Int, numWorkers:Int, numTrainRow: Int, numTrainCol: Int) = {
+		val blockRowSize = Math.ceil(numTrainRow/numWorkers)
+		val blockColSize = Math.ceil(numTrainCol/numWorkers)
+		(Math.floor(row/blockRowSize), Math.floor(col/blockColSize))
 	}
 
 
-
 	// CONSTANTS
-	val NumWorkers = 5
+	val numWorkers = 3
 	val Rank = 10
 	val maxIter = 100
 	val tau = 100
@@ -33,8 +36,8 @@ object DSGD {
 
 	
 
-	val numTrainRow = V.numRows()
-	val numTrainCol = V.numCols()
+	val numTrainRow = V.numRows().toInt
+	val numTrainCol = V.numCols().toInt
 
 	/*
 	// Initialize W and H as random matrices
@@ -52,16 +55,20 @@ object DSGD {
 	*/
 
 	// Initialize W and H as random 2D arrays (matrices)
-	val W: Array[Array[Double]] = Array.fill(numTrainRow, Rank) { Random.nextDouble }
-	val H: Array[Array[Double]] = Array.fill(Rank, numTrainCol) { Random.nextDouble }
-	val HTransposed = H.transpose
+	var W: Array[Array[Double]] = Array.fill(numTrainRow, Rank) { Random.nextDouble }
+	//var W = sc.parallelize(1 to numTrainRow).map(x => (x,Array.fill(numTrainRow) { Random.nextDouble }))
+	W(747)(0)
+	val oldW = W
+	var H: Array[Array[Double]] = Array.fill(Rank, numTrainCol) { Random.nextDouble }
+	//var HTransposed = sc.parallelize(1 to numTrainCol).map(x => (x,Array.fill(numTrainCol) { Random.nextDouble }))
+	var HTransposed = H.transpose
 
 	// Broadcast V (V), W, and H
-
+	/*
 	val bcV = sc.broadcast(V)
 	val bcW = sc.broadcast(W)
 	val bcH = sc.broadcast(HTransposed)
-
+	*/
 
 	// Loop while not converge
 	// Loop permutation to pick Strata
@@ -71,37 +78,44 @@ object DSGD {
 
 	var iter = 0
 
-	val strata = stratPerms(numWorkers)
+	var strata = stratPerms(numWorkers)
+	val numStrata = strata.length
 
 	while (iter < maxIter) {
 		val stepSize = scala.math.pow((tau + iter),beta)
-		while (strata.hasNext) {
-			var rowID = 0
-			for (colID <- strata.next) { //change this to parallel for
-				blockVEntries = V.entries.filter(entry => 
-					((assignBlocks(entry.i, entry.j, numWorkers)._1 == rowID) && 
-					(assignBlocks(entry.it, entry.j, numWorkers)._2 == colID))) //Change this to broadcast variable
-				for (entry <- blockVEntries) {
-					val WRow = W(entry.i)
-					//val HCol = H.map{_(entry.j)}
-					val Hcol = HTransposed(entry.j)
+		val colPerms = strata(iter % numStrata) 
+
+
+		for (i <- 0 to numWorkers-1) {
+			//val perm = strata.next
+			val rowID = i
+			val colID = colPerms(i)
+			//val colID = strata.next(3)	
+				val blockVEntries = V.entries.filter(entry => 
+					((assignBlocks(entry.i.toInt, entry.j.toInt, numWorkers, numTrainRow, numTrainCol)._1 == rowID) && 
+					(assignBlocks(entry.i.toInt, entry.j.toInt, numWorkers, numTrainRow, numTrainCol)._2 == colID))) //Change this to broadcast variable
+				for (entry <- blockVEntries.collect()) { //Change to parallel for
+				//val entry = blockVEntries.first
+					val WRow = W(entry.i.toInt)
+					val HCol = HTransposed(entry.j.toInt)
+
 					val VMinusWH = 2*(entry.value - (WRow,HCol).zipped.map(_*_).sum) 
-					val gradW = (Hcol.map(_*(-VMinusWH)), WRow.map(_*2*lambda)).zipped.map(_+_)
-					W(entry.i) = (WRow,gradW).zipped.map(_-stepSize*_)
+
+					val gradW = (HCol.map(_*(-VMinusWH)), WRow.map(_*2*lambda)).zipped.map(_+_)
+					W(entry.i.toInt) = (WRow,gradW).zipped.map(_-stepSize*_)
 
 					val gradH = (WRow.map(_*(-VMinusWH)), HCol.map(_*2*lambda)).zipped.map(_+_)
-					HTransposed(entry.j) = (Hcol,gradH).zipped.map(_-stepSize*_)
+					HTransposed(entry.j.toInt) = (HCol,gradH).zipped.map(_-stepSize*_)
 
 				}
-				rowID = rowID + 1
-			}
+				//rowID = rowID + 1
+			
 		}
+		
 
 		iter = iter + 1
 	}
 
+	W(747)(0)
 
 
-
-
-}
