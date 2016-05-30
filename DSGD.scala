@@ -19,6 +19,10 @@ import scala.util.Random
 		(Math.floor(row/blockRowSize), Math.floor(col/blockColSize))
 	}
 
+	def assignBlockIndex (index: Int, numData: Int, numWorkers: Int) = {
+		Math.floor(index/Math.ceil(numData/numWorkers)).toInt
+	}
+
 
 	// CONSTANTS
 	val numWorkers = 3
@@ -39,53 +43,57 @@ import scala.util.Random
 	val numTrainRow = V.numRows().toInt
 	val numTrainCol = V.numCols().toInt
 
-	/*
-	// Initialize W and H as random matrices
-
-	val DataW: RDD[Vector] = RandomRDDs.normalVectorRDD(sc, m, Rank, 5, 1)
-	val W = new RowMatrix(data, m, Rank) 
-
-	val DataH: RDD[Vector] = RandomRDDs.normalVectorRDD(sc, Rank, n, 5, 1)
-	val H = new RowMatrix(data, Rank, n) 
-
-	// Initialize W and H as org.apache.spark.mllib.linalg.Matrix
-	var W: Matrix = Matrices.dense(numTrainRow, Rank, Array.fill(numTrainRow*Rank){Random.nextDouble})
-	var H: Matrix = Matrices.dense(Rank, numTrainCol, Array.fill(Rank*numTrainCol){Random.nextDouble})
-	
-	*/
-
 	// Initialize W and H as random 2D arrays (matrices)
-	var W: Array[Array[Double]] = Array.fill(numTrainRow, Rank) { Random.nextDouble }
-	//var W = sc.parallelize(1 to numTrainRow).map(x => (x,Array.fill(numTrainRow) { Random.nextDouble }))
-	W(747)(0)
-	val oldW = W
-	var H: Array[Array[Double]] = Array.fill(Rank, numTrainCol) { Random.nextDouble }
-	//var HTransposed = sc.parallelize(1 to numTrainCol).map(x => (x,Array.fill(numTrainCol) { Random.nextDouble }))
-	var HTransposed = H.transpose
 
-	// Broadcast V (V), W, and H
-	/*
-	val bcV = sc.broadcast(V)
-	val bcW = sc.broadcast(W)
-	val bcH = sc.broadcast(HTransposed)
-	*/
+	var W = sc.parallelize(0 to numTrainRow-1).map(x => (x,Array.fill(numTrainRow) { Random.nextDouble }))
+	
+	var HTransposed = sc.parallelize(0 to numTrainCol-1).map(x => (x,Array.fill(numTrainCol) { Random.nextDouble }))
 
-	// Loop while not converge
-	// Loop permutation to pick Strata
-	// Run SGD on blocks in parallel
+	//val VRDD = V.entries.map(entry => (assignBlockIndex(entry.i.toInt, numTrainRow, numWorkers), entry))
+	W = W.map(tuple => (assignBlockIndex(tuple._1, numTrainRow, numWorkers), tuple._2))
+	HTransposed = HTransposed.map(tuple => (assignBlockIndex(tuple._1, numTrainRow, numWorkers), tuple._2))
 
-	// SGD updates for a single block
 
 	var iter = 0
 
 	var strata = stratPerms(numWorkers)
+
+	def stratTuples (strata: List[Int]) = {
+		val len = strata.length
+		val i = List.range(0,len)
+		i.map(a => (a, strata(a)))
+	}
+
 	val numStrata = strata.length
 
-	while (iter < maxIter) {
+	while (iter < maxIter) { //Or until convergence
 		val stepSize = scala.math.pow((tau + iter),beta)
 		val colPerms = strata(iter % numStrata) 
 
+		//Build a set of strata
+		val VRDD = V.entries.filter(entry => stratTuples(colPerms).contains((assignBlockIndex(entry.i.toInt, numTrainRow, numWorkers)
+			, assignBlockIndex(entry.j.toInt, numTrainCol, numWorkers))))
 
+		val keyedVRDD = VRDD.map(entry => (assignBlockIndex(entry.i.toInt, numTrainRow, numWorkers),entry))
+
+		val HPermuted = HTransposed.map(tuple => (colPerms(tuple._1), tuple._2))
+
+
+
+		//val mew = res10.map(entry => if (entry._2 == 3) (entry._1, 8) else entry) 
+
+
+		/*
+		var VWH = V.cogroup()
+		VWH.partitionBy(HashPartitioner(numWorkers))
+		*/
+		// Use filter
+
+
+		
+
+
+		/*
 		for (i <- 0 to numWorkers-1) {
 			//val perm = strata.next
 			val rowID = i
@@ -111,11 +119,9 @@ import scala.util.Random
 				//rowID = rowID + 1
 			
 		}
-		
+		*/
 
 		iter = iter + 1
 	}
-
-	W(747)(0)
 
 
