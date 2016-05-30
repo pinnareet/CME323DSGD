@@ -21,13 +21,15 @@ import scala.util.Random
 	}
 
 	def assignBlockIndex (index: Int, numData: Int, numWorkers: Int) = {
-		Math.floor(index/Math.ceil(numData/numWorkers)).toInt
+		var blockSize = numData/numWorkers
+		if(numData % numWorkers != 0) blockSize = blockSize + 1
+		Math.floor(index/Math.ceil(blockSize)).toInt
 	}
 
 
 	// CONSTANTS
 	val numWorkers = 2
-	val Rank = 4
+	val Rank = 2
 	val maxIter = 100
 	val tau = 100
 	val beta = -0.6
@@ -52,7 +54,7 @@ import scala.util.Random
 	// Have NumWorkers work on this parallelize (range, NumWorkers)
 	
 	//var HT = sc.parallelize(0 to numTrainCol-1).map(x => (x,Array.fill(numTrainCol) { Random.nextDouble }))
-	var H = sc.parallelize(0 to numTrainCol-1).map(x => (x,Array.fill(numTrainCol) { 0.1 * (x%11)}))
+	var HT = sc.parallelize(0 to numTrainCol-1).map(x => (x,Array.fill(numTrainCol) { 0.1 * (x%11)}))
 
 	//val VRDD = V.entries.map(entry => (assignBlockIndex(entry.i.toInt, numTrainRow, numWorkers), entry))
 	var WBlocked = W.map(tuple => (assignBlockIndex(tuple._1, numTrainRow, numWorkers), tuple))
@@ -77,7 +79,7 @@ import scala.util.Random
 	// RDD[(Int, (Iterable[org.apache.spark.mllib.linalg.distributed.MatrixEntry], Iterable[(Int, Array[Double])], Iterable[(Int, Array[Double])]))]
 
 	// vwh is a block of V and corresponding W and H. Returns updated RDD of W and H 
-	def SGD (vwh : (Int, (Iterable[MatrixEntry], Iterable[(Int, Array[Double])], Iterable[(Int, Array[Double])]))) = {
+	def SGD (vwh : (Int, (Iterable[MatrixEntry], Iterable[(Int, Array[Double])], Iterable[(Int, Array[Double])])), stepSize : Double) = {
 		val VIter : Iterator[MatrixEntry] = vwh._2._1.iterator
 		var WIter : Iterator[(Int, Array[Double])] = vwh._2._2.iterator 
 		var HIter : Iterator[(Int, Array[Double])]= vwh._2._3.iterator
@@ -110,7 +112,7 @@ import scala.util.Random
 	while (iter < maxIter) { //Or until convergence
 		val stepSize = scala.math.pow((tau + iter),beta)
 		val colPerms = strata(iter % numStrata) 
-
+		
 		//Build a set of strata
 		val VRDD = V.entries.filter(entry => stratTuples(colPerms).contains((assignBlockIndex(entry.i.toInt, numTrainRow, numWorkers)
 			, assignBlockIndex(entry.j.toInt, numTrainCol, numWorkers))))
@@ -123,7 +125,7 @@ import scala.util.Random
 
 		VWH.partitionBy(new HashPartitioner(numWorkers))
 
-		WH = VWH.mapPartitions(a => a.map(b => SGD(b))) //Each partition has 1 element RDD
+		WH = VWH.mapPartitions(a => a.map(b => SGD(b, stepSize))) //Each partition has 1 element RDD
 
 		//updatedWH updates W and H and become an RDD of (Iterator[(Int, Array[Double])], Iterator[(Int, Array[Double])])
 		iter = iter + 1
@@ -132,3 +134,4 @@ import scala.util.Random
 
 
 // Extract W and H 
+
