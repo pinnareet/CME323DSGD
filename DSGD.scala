@@ -1,8 +1,9 @@
-import org.apache.spark.rdd.RDD
+import org.apache.spark.HashPartitioner
 import org.apache.spark.mllib.linalg.Matrix
 import org.apache.spark.mllib.linalg.Matrices
 import org.apache.spark.mllib.linalg.distributed.MatrixEntry
 import org.apache.spark.mllib.linalg.distributed.CoordinateMatrix
+import org.apache.spark.rdd.RDD
 import scala.util.Random
 
 
@@ -25,15 +26,16 @@ import scala.util.Random
 
 
 	// CONSTANTS
-	val numWorkers = 3
-	val Rank = 10
+	val numWorkers = 2
+	val Rank = 4
 	val maxIter = 100
 	val tau = 100
 	val beta = -0.6
 	val lambda = 0.1 // Regularization parameter
 
 	// load in V text file
-	val trainDat = sc.textFile("cme323_final_project/ratings-tiny.txt")
+	//val trainDat = sc.textFile("cme323_final_project/ratings-tiny.txt")
+	val trainDat = sc.textFile("cme323_final_project/test.txt")
 	val entries : RDD[MatrixEntry] = trainDat.map(_.split(",") match { case Array(label,idx,value) => 
 		MatrixEntry(label.toInt, idx.toInt, value.toDouble)})
 	val V: CoordinateMatrix = new CoordinateMatrix(entries)
@@ -45,13 +47,16 @@ import scala.util.Random
 
 	// Initialize W and H as random 2D arrays (matrices)
 
-	var W = sc.parallelize(0 to numTrainRow-1).map(x => (x,Array.fill(numTrainRow) { Random.nextDouble }))
+	//var W = sc.parallelize(0 to numTrainRow-1).map(x => (x,Array.fill(numTrainRow) { Random.nextDouble }))
+	var W = sc.parallelize(0 to numTrainRow-1).map(x => (x,Array.fill(numTrainRow) { 0.1 * (x%13)}))
+	// Have NumWorkers work on this parallelize (range, NumWorkers)
 	
-	var HTransposed = sc.parallelize(0 to numTrainCol-1).map(x => (x,Array.fill(numTrainCol) { Random.nextDouble }))
+	//var HT = sc.parallelize(0 to numTrainCol-1).map(x => (x,Array.fill(numTrainCol) { Random.nextDouble }))
+	var H = sc.parallelize(0 to numTrainCol-1).map(x => (x,Array.fill(numTrainCol) { 0.1 * (x%11)}))
 
 	//val VRDD = V.entries.map(entry => (assignBlockIndex(entry.i.toInt, numTrainRow, numWorkers), entry))
-	W = W.map(tuple => (assignBlockIndex(tuple._1, numTrainRow, numWorkers), tuple._2))
-	HTransposed = HTransposed.map(tuple => (assignBlockIndex(tuple._1, numTrainRow, numWorkers), tuple._2))
+	var WBlocked = W.map(tuple => (assignBlockIndex(tuple._1, numTrainRow, numWorkers), tuple))
+	var HTBlocked = HT.map(tuple => (assignBlockIndex(tuple._1, numTrainRow, numWorkers), tuple))
 
 
 	var iter = 0
@@ -62,6 +67,22 @@ import scala.util.Random
 		val len = strata.length
 		val i = List.range(0,len)
 		i.map(a => (a, strata(a)))
+	}
+
+	//val nnGroup = newGroup.flatMap(x => )	
+
+	//val mew = res10.map(entry => if (entry._2 == 3) (entry._1, 8) else entry) 
+	
+	// Returns an RDD with updated value of W and H
+	// RDD[(Int, (Iterable[org.apache.spark.mllib.linalg.distributed.MatrixEntry], Iterable[(Int, Array[Double])], Iterable[(Int, Array[Double])]))]
+
+	// vwh is a block of V and corresponding W and H. Returns updated RDD of W and H 
+	def SGD (vwh : (Int, (Iterable[MatrixEntry], Iterable[(Int, Array[Double])], Iterable[(Int, Array[Double])]))) = {
+		val VTest : Iterator[MatrixEntry] = vwh._2._1.iterator
+		var WTest : Iterator[(Int, Array[Double])] = vwh._2._2.iterator
+		var HTest : Iterator[(Int, Array[Double])]= vwh._2._3.iterator
+		//update W and H 
+		//W = ...
 	}
 
 	val numStrata = strata.length
@@ -76,21 +97,17 @@ import scala.util.Random
 
 		val keyedVRDD = VRDD.map(entry => (assignBlockIndex(entry.i.toInt, numTrainRow, numWorkers),entry))
 
-		val HPermuted = HTransposed.map(tuple => (colPerms(tuple._1), tuple._2))
+		val HTPermBlocked = HTBlocked.map(tuple => (colPerms(tuple._1), tuple._2))
 
+		val VWH = keyedVRDD.cogroup(WBlocked, HTPermBlocked)
 
+		VWH.partitionBy(new HashPartitioner(numWorkers))
+
+		val updatedWH = group.mapPartitions(a => a.map(b => SGD(b))) //Each partition has 1 element RDD
+
+		//val updatedVWH = VWH.mapPartitions(a => SGD(a)) //update W and H 
 
 		//val mew = res10.map(entry => if (entry._2 == 3) (entry._1, 8) else entry) 
-
-
-		/*
-		var VWH = V.cogroup()
-		VWH.partitionBy(HashPartitioner(numWorkers))
-		*/
-		// Use filter
-
-
-		
 
 
 		/*
