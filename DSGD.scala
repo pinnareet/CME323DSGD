@@ -78,15 +78,35 @@ import scala.util.Random
 
 	// vwh is a block of V and corresponding W and H. Returns updated RDD of W and H 
 	def SGD (vwh : (Int, (Iterable[MatrixEntry], Iterable[(Int, Array[Double])], Iterable[(Int, Array[Double])]))) = {
-		val VTest : Iterator[MatrixEntry] = vwh._2._1.iterator
-		var WTest : Iterator[(Int, Array[Double])] = vwh._2._2.iterator
-		var HTest : Iterator[(Int, Array[Double])]= vwh._2._3.iterator
-		//update W and H 
-		//W = ...
+		val VIter : Iterator[MatrixEntry] = vwh._2._1.iterator
+		var WIter : Iterator[(Int, Array[Double])] = vwh._2._2.iterator 
+		var HIter : Iterator[(Int, Array[Double])]= vwh._2._3.iterator
+
+		for (entry <- VIter) {
+			val rowID : Int = entry.i.toInt
+			val colID : Int = entry.j.toInt
+
+			val WRow = WIter.filter(row => row._1 == rowID).toList(0)._2
+			val HCol = HIter.filter(col => col._1 == colID).toList(0)._2
+
+			val VMinusWH = 2*(entry.value - (WRow,HCol).zipped.map(_*_).sum) 
+
+			val gradW = (HCol.map(_*(-VMinusWH)), WRow.map(_*2*lambda)).zipped.map(_+_)
+			WIter = WIter.map(x => if (x._1 == rowID) (x._1, (WRow,gradW).zipped.map(_-stepSize*_)) else x)
+			
+			//W(entry.i.toInt) = (WRow,gradW).zipped.map(_-stepSize*_)
+
+			val gradH = (WRow.map(_*(-VMinusWH)), HCol.map(_*2*lambda)).zipped.map(_+_)
+			HIter = HIter.map(x => if (x._1 == colID) (x._1, (HCol,gradH).zipped.map(_-stepSize*_)) else x)
+			//HTransposed(entry.j.toInt) = (HCol,gradH).zipped.map(_-stepSize*_)
+		}
+		
+		(WIter, HIter)
 	}
 
 	val numStrata = strata.length
 
+	var WH : RDD[(Iterator[(Int, Array[Double])], Iterator[(Int, Array[Double])])] = sc.emptyRDD[(Iterator[(Int, Array[Double])], Iterator[(Int, Array[Double])])]
 	while (iter < maxIter) { //Or until convergence
 		val stepSize = scala.math.pow((tau + iter),beta)
 		val colPerms = strata(iter % numStrata) 
@@ -103,42 +123,12 @@ import scala.util.Random
 
 		VWH.partitionBy(new HashPartitioner(numWorkers))
 
-		val updatedWH = group.mapPartitions(a => a.map(b => SGD(b))) //Each partition has 1 element RDD
+		WH = VWH.mapPartitions(a => a.map(b => SGD(b))) //Each partition has 1 element RDD
 
-		//val updatedVWH = VWH.mapPartitions(a => SGD(a)) //update W and H 
-
-		//val mew = res10.map(entry => if (entry._2 == 3) (entry._1, 8) else entry) 
-
-
-		/*
-		for (i <- 0 to numWorkers-1) {
-			//val perm = strata.next
-			val rowID = i
-			val colID = colPerms(i)
-			//val colID = strata.next(3)	
-				val blockVEntries = V.entries.filter(entry => 
-					((assignBlocks(entry.i.toInt, entry.j.toInt, numWorkers, numTrainRow, numTrainCol)._1 == rowID) && 
-					(assignBlocks(entry.i.toInt, entry.j.toInt, numWorkers, numTrainRow, numTrainCol)._2 == colID))) //Change this to broadcast variable
-				for (entry <- blockVEntries.collect()) { //Change to parallel for
-				//val entry = blockVEntries.first
-					val WRow = W(entry.i.toInt)
-					val HCol = HTransposed(entry.j.toInt)
-
-					val VMinusWH = 2*(entry.value - (WRow,HCol).zipped.map(_*_).sum) 
-
-					val gradW = (HCol.map(_*(-VMinusWH)), WRow.map(_*2*lambda)).zipped.map(_+_)
-					W(entry.i.toInt) = (WRow,gradW).zipped.map(_-stepSize*_)
-
-					val gradH = (WRow.map(_*(-VMinusWH)), HCol.map(_*2*lambda)).zipped.map(_+_)
-					HTransposed(entry.j.toInt) = (HCol,gradH).zipped.map(_-stepSize*_)
-
-				}
-				//rowID = rowID + 1
-			
-		}
-		*/
-
+		//updatedWH updates W and H and become an RDD of (Iterator[(Int, Array[Double])], Iterator[(Int, Array[Double])])
 		iter = iter + 1
 	}
 
 
+
+// Extract W and H 
