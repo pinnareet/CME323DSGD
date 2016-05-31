@@ -31,6 +31,7 @@ Logger.getLogger("akka").setLevel(Level.OFF)
 		var blockSize = numData/numWorkers
 		if(numData % numWorkers != 0) blockSize = blockSize + 1
 		Math.floor(index/Math.ceil(blockSize)).toInt
+		index/numWorkers
 	}
 
 
@@ -45,8 +46,10 @@ Logger.getLogger("akka").setLevel(Level.OFF)
 	// load in V text file
 	val trainDat = sc.textFile("cme323_final_project/ratings-tiny.txt")
 	//val trainDat = sc.textFile("cme323_final_project/test.txt")
+	//val trainDat = sc.textFile("cme323_final_project/TrainingRatings.txt")
 	// /FileStore/tables/smahn67n1464687565778/ratings_tiny-993e4.txt
 	// /FileStore/tables/rkyuksp91464680885609/test.txt
+	// /FileStore/tables/1emmr8z71464691244365/TrainingRatings.txt
 	val entries : RDD[MatrixEntry] = trainDat.map(_.split(",") match { case Array(label,idx,value) => 
 		MatrixEntry(label.toInt, idx.toInt, value.toDouble)})
 	val V: CoordinateMatrix = new CoordinateMatrix(entries)
@@ -58,12 +61,12 @@ Logger.getLogger("akka").setLevel(Level.OFF)
 
 	// Initialize W and H as random 2D arrays (matrices)
 
-	//var W = sc.parallelize(0 to numTrainRow-1).map(x => (x,Array.fill(numTrainRow) { Random.nextDouble }))
-	var W = sc.parallelize(0 to numTrainRow-1).map(x => (x,Array.fill(numTrainRow) { 0.1 * (x%13)}))
+	var W = sc.parallelize(0 to numTrainRow-1).map(x => (x,Array.fill(numTrainRow) { Random.nextDouble }))
+	//var W = sc.parallelize(0 to numTrainRow-1).map(x => (x,Array.fill(numTrainRow) { 0.1 * (x%13)}))
 	// Have NumWorkers work on this parallelize (range, NumWorkers)
 	
-	//var HT = sc.parallelize(0 to numTrainCol-1).map(x => (x,Array.fill(numTrainCol) { Random.nextDouble }))
-	var HT = sc.parallelize(0 to numTrainCol-1).map(x => (x,Array.fill(numTrainCol) { 0.1 * (x%11)}))
+	var HT = sc.parallelize(0 to numTrainCol-1).map(x => (x,Array.fill(numTrainCol) { Random.nextDouble }))
+	//var HT = sc.parallelize(0 to numTrainCol-1).map(x => (x,Array.fill(numTrainCol) { 0.1 * (x%11)}))
 
 	//val VRDD = V.entries.map(entry => (assignBlockIndex(entry.i.toInt, numTrainRow, numWorkers), entry))
 	var WBlocked = W.map(tuple => (assignBlockIndex(tuple._1, numTrainRow, numWorkers), tuple))
