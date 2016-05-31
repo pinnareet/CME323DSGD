@@ -5,11 +5,18 @@ import org.apache.spark.mllib.linalg.distributed.MatrixEntry
 import org.apache.spark.mllib.linalg.distributed.CoordinateMatrix
 import org.apache.spark.rdd.RDD
 import scala.util.Random
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
+
+Logger.getLogger("org").setLevel(Level.OFF)
+Logger.getLogger("akka").setLevel(Level.OFF)
 
 
 	def stratPerms (numBlocks:Int) = {
 		val x = 0 to numBlocks - 1 toList
-		val p = x.permutations.toList
+		//val p = x.permutations.toList
+		//p
+		val p = x.map(x=>List.range(x, x+numBlocks).map(a=>a%numBlocks))
 		p
 	}
 
@@ -28,7 +35,7 @@ import scala.util.Random
 
 
 	// CONSTANTS
-	val numWorkers = 2
+	val numWorkers = 3
 	val Rank = 2
 	val maxIter = 100
 	val tau = 100
@@ -36,8 +43,10 @@ import scala.util.Random
 	val lambda = 0.1 // Regularization parameter
 
 	// load in V text file
-	//val trainDat = sc.textFile("cme323_final_project/ratings-tiny.txt")
-	val trainDat = sc.textFile("cme323_final_project/test.txt")
+	val trainDat = sc.textFile("cme323_final_project/ratings-tiny.txt")
+	//val trainDat = sc.textFile("cme323_final_project/test.txt")
+	// /FileStore/tables/smahn67n1464687565778/ratings_tiny-993e4.txt
+	// /FileStore/tables/rkyuksp91464680885609/test.txt
 	val entries : RDD[MatrixEntry] = trainDat.map(_.split(",") match { case Array(label,idx,value) => 
 		MatrixEntry(label.toInt, idx.toInt, value.toDouble)})
 	val V: CoordinateMatrix = new CoordinateMatrix(entries)
@@ -60,29 +69,10 @@ import scala.util.Random
 	var WBlocked = W.map(tuple => (assignBlockIndex(tuple._1, numTrainRow, numWorkers), tuple))
 	var HTBlocked = HT.map(tuple => (assignBlockIndex(tuple._1, numTrainRow, numWorkers), tuple))
 
-
-	var iter = 0
-
-	var strata = stratPerms(numWorkers)
-
-	def stratTuples (strata: List[Int]) = {
-		val len = strata.length
-		val i = List.range(0,len)
-		i.map(a => (a, strata(a)))
-	}
-
-	//val nnGroup = newGroup.flatMap(x => )	
-
-	//val mew = res10.map(entry => if (entry._2 == 3) (entry._1, 8) else entry) 
-	
-	// Returns an RDD with updated value of W and H
-	// RDD[(Int, (Iterable[org.apache.spark.mllib.linalg.distributed.MatrixEntry], Iterable[(Int, Array[Double])], Iterable[(Int, Array[Double])]))]
-
-	// vwh is a block of V and corresponding W and H. Returns updated RDD of W and H 
 	def SGD (vwh : (Int, (Iterable[MatrixEntry], Iterable[(Int, Array[Double])], Iterable[(Int, Array[Double])])), stepSize : Double) = {
-		val VIter : Iterator[MatrixEntry] = vwh._2._1.iterator
-		var WIter : Iterator[(Int, Array[Double])] = vwh._2._2.iterator 
-		var HIter : Iterator[(Int, Array[Double])]= vwh._2._3.iterator
+		val VIter : List[MatrixEntry] = vwh._2._1.iterator.toList
+		var WIter : List[(Int, Array[Double])] = vwh._2._2.iterator.toList 
+		var HIter : List[(Int, Array[Double])]= vwh._2._3.iterator.toList
 
 		for (entry <- VIter) {
 			val rowID : Int = entry.i.toInt
@@ -106,26 +96,43 @@ import scala.util.Random
 		(WIter, HIter)
 	}
 
+
+	var iter = 0
+
+	var strata = stratPerms(numWorkers)
+
+	def stratTuples (strata: List[Int]) = {
+		val len = strata.length
+		val i = List.range(0,len)
+		i.map(a => (a, strata(a)))
+	}
+
+	
 	val numStrata = strata.length
 
-	var WH : RDD[(Iterator[(Int, Array[Double])], Iterator[(Int, Array[Double])])] = sc.emptyRDD[(Iterator[(Int, Array[Double])], Iterator[(Int, Array[Double])])]
+	//var WH : RDD[(Iterator[(Int, Array[Double])], Iterator[(Int, Array[Double])])] = sc.emptyRDD[(Iterator[(Int, Array[Double])], Iterator[(Int, Array[Double])])]
+
+	var WH : RDD[(List[(Int, Array[Double])], List[(Int, Array[Double])])] = sc.emptyRDD[(List[(Int, Array[Double])], List[(Int, Array[Double])])]
 	while (iter < maxIter) { //Or until convergence
 		val stepSize = scala.math.pow((tau + iter),beta)
 		val colPerms = strata(iter % numStrata) 
-		
+
 		//Build a set of strata
 		val VRDD = V.entries.filter(entry => stratTuples(colPerms).contains((assignBlockIndex(entry.i.toInt, numTrainRow, numWorkers)
 			, assignBlockIndex(entry.j.toInt, numTrainCol, numWorkers))))
 
 		val keyedVRDD = VRDD.map(entry => (assignBlockIndex(entry.i.toInt, numTrainRow, numWorkers),entry))
 
-		val HTPermBlocked = HTBlocked.map(tuple => (colPerms(tuple._1), tuple._2))
+		val HTPermBlocked = HTBlocked.map(tuple => (colPerms.indexOf(tuple._1), tuple._2))
 
 		val VWH = keyedVRDD.cogroup(WBlocked, HTPermBlocked)
 
-		VWH.partitionBy(new HashPartitioner(numWorkers))
 
-		WH = VWH.mapPartitions(a => a.map(b => SGD(b, stepSize))) //Each partition has 1 element RDD
+		val VWHP = VWH.partitionBy(new HashPartitioner(numWorkers))
+
+
+		WH = VWHP.mapPartitions(iter => iter.map(b => SGD(b, stepSize))) //Each partition has 1 element RDD
+		//WH = VHWP.map(b => SGD(b, stepSize))
 
 		//updatedWH updates W and H and become an RDD of (Iterator[(Int, Array[Double])], Iterator[(Int, Array[Double])])
 		iter = iter + 1
