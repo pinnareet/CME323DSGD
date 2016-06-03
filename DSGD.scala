@@ -5,12 +5,6 @@ import org.apache.spark.mllib.linalg.distributed.MatrixEntry
 import org.apache.spark.mllib.linalg.distributed.CoordinateMatrix
 import org.apache.spark.rdd.RDD
 import scala.util.Random
-import org.apache.log4j.Logger
-import org.apache.log4j.Level
-
-Logger.getLogger("org").setLevel(Level.OFF)
-Logger.getLogger("akka").setLevel(Level.OFF)
-
 
 	def stratPerms (numBlocks:Int) = {
 		val x = 0 to numBlocks - 1 toList
@@ -36,8 +30,8 @@ Logger.getLogger("akka").setLevel(Level.OFF)
 
 
 	// CONSTANTS
-	val numWorkers = 3
-	val Rank = 2
+	val numWorkers = 10
+	val Rank = 3
 	val maxIter = 100
 	val tau = 100
 	val beta = -0.6
@@ -46,15 +40,13 @@ Logger.getLogger("akka").setLevel(Level.OFF)
 	// load in V text file
 	val trainDat = sc.textFile("cme323_final_project/ratings-tiny.txt")
 	//val trainDat = sc.textFile("cme323_final_project/test.txt")
-	//val trainDat = sc.textFile("cme323_final_project/TrainingRatings.txt")
+	//val trainDat = sc.textFile("cme323_final_project/TrainingRatings1.txt")
 	// /FileStore/tables/smahn67n1464687565778/ratings_tiny-993e4.txt
 	// /FileStore/tables/rkyuksp91464680885609/test.txt
 	// /FileStore/tables/1emmr8z71464691244365/TrainingRatings.txt
 	val entries : RDD[MatrixEntry] = trainDat.map(_.split(",") match { case Array(label,idx,value) => 
 		MatrixEntry(label.toInt, idx.toInt, value.toDouble)})
 	val V: CoordinateMatrix = new CoordinateMatrix(entries)
-
-	
 
 	val numTrainRow = V.numRows().toInt
 	val numTrainCol = V.numCols().toInt
@@ -135,13 +127,9 @@ Logger.getLogger("akka").setLevel(Level.OFF)
 
 
 		WH = VWHP.mapPartitions(iter => iter.map(b => SGD(b, stepSize))) //Each partition has 1 element RDD
-		//WH = VHWP.map(b => SGD(b, stepSize))
 
-		//updatedWH updates W and H and become an RDD of (Iterator[(Int, Array[Double])], Iterator[(Int, Array[Double])])
 		iter = iter + 1
 	}
 
-
-
-// Extract W and H 
+//WH.collect()
 
