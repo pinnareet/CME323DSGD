@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-#!/usr/bin/python
-
-
 from operator import mul
 from itertools import imap, izip, starmap
 import numpy as np
@@ -12,8 +8,6 @@ import time
 import matplotlib.pyplot as plt
 from scipy.sparse import coo_matrix
 
-#time for 5000 iterations = 47 mins
-#MSE: 0.579
 
 @autojit(locals={'step': int_, 'e': double, 'err': double}) 
 def sgdmf(R, W, H, K, inds,start_time):
@@ -43,11 +37,14 @@ def sgdmf(R, W, H, K, inds,start_time):
             mse += (R[i1] - nR)**2
             i1 = i1+1
         err = mse / len(inds)
-        errors.append(err)
-        print err
-        times.append(time.time()-start_time)
-        if err < 0.65:
-            break
+        
+        if len(errors) > 1:
+            if abs(err - float(errors[step - 1])) < 0.001:
+                errors.append(str(err))
+                times.append(str(time.time()-start_time))
+                break
+        errors.append(str(err))
+        times.append(str(time.time()-start_time))
 
     return W, H, step, err, errors, times
 
@@ -59,12 +56,11 @@ def main(hist=False, seed=1234567, num_factors=50):
     R = coo_matrix((X[:,2],(X[:,0],X[:,1])),shape = shape, dtype = X.dtype)
     inds = zip(R.row, R.col)
     R = R.data
-    print(len(R))
 
     N, M = [int(shape[0]), int(shape[1])]
     K = num_factors
-    W = np.random.rand(N, K)
-    H = np.random.rand(M, K)
+    W = np.random.rand(N, K)*3.5
+    H = np.random.rand(M, K)*3.5
     start_time = time.time()
     nW, nH, steps, error, errors, times = sgdmf(R, W, H, K, inds,start_time)
     endtimefit = time.time()
@@ -74,24 +70,15 @@ def main(hist=False, seed=1234567, num_factors=50):
     plt.show()
     mse = 0
     i1 = 0
-    for ind in inds:
-        i = ind[0]
-        j = ind[1]
-      
-        eij = R[i1]
-        for p in xrange(K):
-            eij -= nW[i,p] * nH[j,p]
-        mse += eij**2
-
-    print mse/len(inds)
+ 
 
     print('Train time in minutes: %.4f' \
            % ((endtimefit-start_time) / 60.0))
 
     print('Factorization MSE: %.3f' % error)
     f=open('f50.txt','w')
-    for i in range(len(times)):
-        f.write(str(times[i])+','+str(errors[i])+'\n')
+    f.write(",".join(times)+'\n')
+    f.write(",".join(errors))
 
     f.close() 
 
