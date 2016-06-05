@@ -16,14 +16,14 @@ from scipy.sparse import coo_matrix
 #MSE: 0.579
 
 @autojit(locals={'step': int_, 'e': double, 'err': double}) 
-def sgdmf(R, W, H, K, inds):
-    steps = 5000
+def sgdmf(R, W, H, K, inds,start_time):
+    steps = 10
     alpha = 0.001
     lam = 0.1
     errors = []
-
+    times = []
     for step in xrange(steps):
-        
+        print step
         mse = 0.0
         i1 = 0
         for ind in inds:
@@ -44,17 +44,17 @@ def sgdmf(R, W, H, K, inds):
             i1 = i1+1
         err = mse / len(inds)
         errors.append(err)
-
-
-        if err < 0.3:
+        print err
+        times.append(time.time()-start_time)
+        if err < 0.65:
             break
 
-    return W, H, step, err, errors
+    return W, H, step, err, errors, times
 
 
-def main(hist=False, seed=1234567, num_factors=10):
+def main(hist=False, seed=1234567, num_factors=50):
    # start_time = time.time()    
-    X = np.loadtxt('TrainingRatings.txt', delimiter = ',', usecols = (0,1,2))
+    X = np.loadtxt('ml-1m/RatingsShuf.txt', delimiter = ',', usecols = (0,1,2))
     shape = tuple(X.max(axis=0)[:2]+1)
     R = coo_matrix((X[:,2],(X[:,0],X[:,1])),shape = shape, dtype = X.dtype)
     inds = zip(R.row, R.col)
@@ -66,18 +66,34 @@ def main(hist=False, seed=1234567, num_factors=10):
     W = np.random.rand(N, K)
     H = np.random.rand(M, K)
     start_time = time.time()
-    nW, nH, steps, error, errors = sgdmf(R, W, H, K, inds)
+    nW, nH, steps, error, errors, times = sgdmf(R, W, H, K, inds,start_time)
     endtimefit = time.time()
     print('Convergence in %i steps' % steps)
 
     plt.plot(np.arange(steps+1),errors)
     plt.show()
-   
+    mse = 0
+    i1 = 0
+    for ind in inds:
+        i = ind[0]
+        j = ind[1]
+      
+        eij = R[i1]
+        for p in xrange(K):
+            eij -= nW[i,p] * nH[j,p]
+        mse += eij**2
+
+    print mse/len(inds)
 
     print('Train time in minutes: %.4f' \
            % ((endtimefit-start_time) / 60.0))
 
-    print('Factorization MSE: %.3f' % error) 
+    print('Factorization MSE: %.3f' % error)
+    f=open('f50.txt','w')
+    for i in range(len(times)):
+        f.write(str(times[i])+','+str(errors[i])+'\n')
+
+    f.close() 
 
 
 if __name__ == "__main__":
