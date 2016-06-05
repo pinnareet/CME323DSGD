@@ -40,7 +40,7 @@ def main(numFactors, numWorkers, maxIter, beta, lam):
     avgRating = M.map(lambda x: x[2]).mean()
     
     #compute the scaling factor that the randomly initialized W and H matrices need to be scaled by so that dot(W_0,H_0) results in values that are similar to the average ratings
-    scaleRating = np.sqrt(avgRating * 4 / numFactors)
+    scaleRating = np.sqrt(avgRating / numFactors)
     
     tau = 100
     
