@@ -13,8 +13,10 @@ def time[R](block: => R): R = {
 
 
 /**load training and testing data**/
-val trainDat =sc.textFile("/FileStore/tables/l2sz6xo11464326685589/TrainingRatings.txt")
-val testDat = sc.textFile("/FileStore/tables/szv990pk1464328768773/TestingRatings.txt")
+/**val trainDat = sc.textFile("/FileStore/tables/8j3z7jgi1465112138947/RatingsShuf.txt")*/
+val trainDat = sc.textFile("/FileStore/tables/7dn7w4ew1465114785307/RatingsShuf.txt")
+
+/**val testDat = sc.textFile("/FileStore/tables/szv990pk1464328768773/TestingRatings.txt")**/
 
 /**get train ratings RDD**/
 val ratings = trainDat.map(_.split(',') match { case Array(user, item, rate) =>
@@ -22,44 +24,22 @@ val ratings = trainDat.map(_.split(',') match { case Array(user, item, rate) =>
 })
 
 /** run algorithm from ALS implementation and time it for different ranks of the factors **/
-
-val ranks = Vector(5,10,15,20,30,50)
-val numIterations = 10
+/**loop over various factor sizes*/
+val ranks = Vector(10,20,50,100,200,400)
+val numIterations = 20
 for(rank <- ranks)
 {
-  val model = time{ALS.train(ratings, rank, numIterations, 0.01)}
+  time{val model = ALS.train(ratings, rank, numIterations, 0.1)
   
-  val testRat = testDat.map(_.split(',') match { case Array(user, item, rate) =>
-  Rating(user.toInt, item.toInt, rate.toDouble)
-})
-  val usersMovies = testRat.map{ case Rating(user, movie, rate) =>
+  val usersMovies = ratings.map{ case Rating(user, movie, rate) =>
   (user, movie)}
   val predictions = model.predict(usersMovies).map { case Rating(user, movie, rate) =>
     ((user, movie), rate)}
-  val ratesAndPreds = testRat.map{ case Rating(user, movie, rate) =>
+  val ratesAndPreds = ratings.map{ case Rating(user, movie, rate) =>
   ((user, movie), rate)}.join(predictions)
   val MSE = ratesAndPreds.map { case ((user, movie), (r1, r2)) =>
   val err = (r1 - r2)
   err * err
 }.mean()
-println("Mean Squared Error = " + MSE)
+println("Mean Squared Error = " + MSE)}
 }
-/**
-Elapsed time: 34.046480688s
-Mean Squared Error = 0.719300632674746
-
-Elapsed time: 38.907951336s
-Mean Squared Error = 0.6999753474768506
-
-Elapsed time: 40.57805099s
-Mean Squared Error = 0.7194129186771464
-
-Elapsed time: 113.310693934s
-Mean Squared Error = 0.7503646809863859
-
-Elapsed time: 131.648135351s
-Mean Squared Error = 0.8081119336189002
-
-Elapsed time: 367.787043885s
-Mean Squared Error = 0.9453637968975303
-**/
